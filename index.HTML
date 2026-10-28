@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QR Form</title>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 16px; }
+    h2 { margin-top: 0; }
+    button { padding: 12px 18px; font-size: 16px; border: 0; border-radius: 8px;
+             background: #1a73e8; color: #fff; cursor: pointer; }
+    button:disabled { background: #999; }
+    #reader { width: 100%; margin: 12px 0; }
+    textarea { width: 100%; min-height: 90px; font-size: 16px; padding: 8px;
+               box-sizing: border-box; }
+    .options label { display: block; padding: 10px; border: 1px solid #ccc;
+                     border-radius: 8px; margin: 8px 0; font-size: 16px; }
+    #status { margin-top: 12px; font-weight: 600; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <h2>QR Submission Form</h2>
+
+  <button id="scanBtn">📷 Scan QR Code</button>
+  <div id="reader"></div>
+
+  <label for="qrText"><b>Scanned text</b></label>
+  <textarea id="qrText" readonly placeholder="Scanned text will appear here..."></textarea>
+
+  <div class="options" id="options">
+    <label><input type="radio" name="opt" value="Option A"> Option A</label>
+    <label><input type="radio" name="opt" value="Option B"> Option B</label>
+  </div>
+
+  <button id="submitBtn" class="hidden">Submit</button>
+  <div id="status"></div>
+
+  <script>
+    const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyctkLIEyRnzawNWqt9Anp33qS9rWBO8TsSEQ8zmXKQRTe6c4UFTqpp1StankVLoIp1DQ/exec';
+
+    const scanBtn = document.getElementById('scanBtn');
+    const qrText = document.getElementById('qrText');
+    const submitBtn = document.getElementById('submitBtn');
+    const statusEl = document.getElementById('status');
+    let scanner = null;
+
+    // --- Scanning ---
+    scanBtn.addEventListener('click', async () => {
+      statusEl.textContent = '';
+      if (!scanner) scanner = new Html5Qrcode('reader');
+      try {
+        await scanner.start(
+          { facingMode: 'environment' },
+          { fps: 10, qrbox: { width: 250, height: 250 } },
+          async (decodedText) => {
+            qrText.value = decodedText;
+            await scanner.stop();       // stop camera after a successful scan
+            scanner.clear();
+            updateSubmitVisibility();
+          }
+        );
+      } catch (err) {
+        statusEl.textContent = 'Camera error: ' + err;
+      }
+    });
+
+    // --- Show Submit only when text + option are both present ---
+    function selectedOption() {
+      const r = document.querySelector('input[name="opt"]:checked');
+      return r ? r.value : null;
+    }
+    function updateSubmitVisibility() {
+      const ready = qrText.value.trim() && selectedOption();
+      submitBtn.classList.toggle('hidden', !ready);
+    }
+    document.querySelectorAll('input[name="opt"]')
+      .forEach(r => r.addEventListener('change', updateSubmitVisibility));
+
+    // --- Submit ---
+    submitBtn.addEventListener('click', async () => {
+      submitBtn.disabled = true;
+      statusEl.textContent = 'Submitting...';
+      try {
+        const res = await fetch(WEB_APP_URL, {
+          method: 'POST',
+          // text/plain avoids a CORS preflight, which Apps Script can't answer
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ qrText: qrText.value, option: selectedOption() })
+        });
+        const result = await res.json();
+        if (!result.ok) throw new Error(result.error);
+        statusEl.textContent = '✅ Submitted successfully!';
+        qrText.value = '';
+        document.querySelectorAll('input[name="opt"]').forEach(r => r.checked = false);
+        submitBtn.classList.add('hidden');
+      } catch (err) {
+        statusEl.textContent = '❌ Failed: ' + err.message;
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
